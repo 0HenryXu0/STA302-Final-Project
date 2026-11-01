@@ -1,0 +1,135 @@
+---
+title: "STA302 Project Proposal - Preliminary model"
+author: "Henry Xu"
+output: pdf_document
+geometry: margin=1in
+urlcolor: blue
+---
+
+```{r setup, include=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(knitr)
+
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+
+```{r data cleaning}
+# Preserve IDs as text to avoid rounding large identification numbers.
+airbnb_raw <- read_csv(
+  "listings.csv",
+  na = c("", "NA", "N/A"),
+  col_types = cols(
+    id = col_character(),
+    host_id = col_character(),
+    price = col_character(),
+    host_is_superhost = col_character()
+  ),
+  show_col_types = FALSE
+)
+
+# Confirm that each listing appears once.
+stopifnot(
+  !anyNA(airbnb_raw$id),
+  anyDuplicated(airbnb_raw$id) == 0L
+)
+
+# Select the response, ten predictors, and IDs for later checks.
+airbnb_selected <- airbnb_raw %>%
+  transmute(
+    listing_id = id,
+    host_id = host_id,
+
+    # Response: advertised nightly price in CAD.
+    price = parse_number(price),
+
+    # Numerical predictors.
+    bedrooms = bedrooms,
+    beds = beds,
+    review_rating = review_scores_rating,
+    guest_capacity = accommodates,
+    host_listings = host_listings_count,
+    number_of_reviews = number_of_reviews,
+    minimum_nights = minimum_nights,
+
+    # Categorical predictors.
+    superhost = factor(
+      host_is_superhost,
+      levels = c("f", "t"),
+      labels = c("No", "Yes")
+    ),
+    room_type = relevel(
+      factor(room_type),
+      ref = "Entire home/apt"
+    ),
+    neighbourhood = factor(neighbourhood_cleansed)
+  )
+
+# Define model variables explicitly: IDs are not predictors.
+predictors <- c(
+  "bedrooms",
+  "beds",
+  "superhost",
+  "review_rating",
+  "guest_capacity",
+  "host_listings",
+  "room_type",
+  "number_of_reviews",
+  "minimum_nights",
+  "neighbourhood"
+)
+
+model_variables <- c("price", predictors)
+
+# Record missingness BEFORE excluding incomplete observations.
+missing_summary <- data.frame(
+  variable = model_variables,
+  missing_n = vapply(
+    airbnb_selected[model_variables],
+    function(x) sum(is.na(x)),
+    integer(1)
+  )
+) %>%
+  mutate(
+    missing_percent = round(
+      100 * missing_n / nrow(airbnb_selected), 1
+    )
+  )
+
+# Require an observed, finite, positive nightly price.
+airbnb_priced <- airbnb_selected %>%
+  filter(is.finite(price), price > 0)
+
+# Use a consistent complete-case sample for the preliminary model.
+airbnb_clean <- airbnb_priced %>%
+  drop_na(all_of(model_variables)) %>%
+  droplevels()
+
+# Record how the analysis sample was obtained.
+cleaning_summary <- data.frame(
+  stage = c(
+    "Original listings",
+    "Observed positive price",
+    "Complete data for all model variables"
+  ),
+  listings = c(
+    nrow(airbnb_raw),
+    nrow(airbnb_priced),
+    nrow(airbnb_clean)
+  )
+)
+
+# Verify the project sample-size requirement and numerical validity.
+stopifnot(
+  nrow(airbnb_clean) >= 1000,
+  !anyNA(airbnb_clean[model_variables]),
+  all(vapply(
+    select(airbnb_clean, where(is.numeric)),
+    function(x) all(is.finite(x)),
+    logical(1)
+  ))
+)
+```
