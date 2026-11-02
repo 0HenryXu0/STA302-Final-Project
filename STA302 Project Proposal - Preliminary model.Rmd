@@ -6,6 +6,8 @@ geometry: margin=1in
 urlcolor: blue
 ---
 
+## This file is not designed for knitting
+
 ```{r setup, include=FALSE}
 library(readr)
 library(dplyr)
@@ -17,7 +19,7 @@ knitr::opts_chunk$set(echo = FALSE)
 
 
 
-```{r data cleaning}
+```{r data cleaning, include=FALSE}
 # Preserve IDs as text to avoid rounding large identification numbers.
 airbnb_raw <- read_csv(
   "listings.csv",
@@ -99,7 +101,7 @@ missing_summary <- data.frame(
     )
   )
 
-# Require an observed, finite, positive nightly price.
+# Check for an observed, finite, positive nightly price.
 airbnb_priced <- airbnb_selected %>%
   filter(is.finite(price), price > 0)
 
@@ -132,4 +134,31 @@ stopifnot(
     logical(1)
   ))
 )
+```
+
+
+
+```{r check-cleaning, include=FALSE}
+cleaning_summary
+missing_summary
+
+summary(airbnb_clean[model_variables])
+
+table(airbnb_clean$room_type)
+table(airbnb_clean$superhost)
+
+# Examine whether hosts contribute multiple listings.
+airbnb_clean %>%
+  count(host_id, name = "listings_in_analysis") %>%
+  summarise(
+    unique_hosts = n(),
+    hosts_with_multiple_listings = sum(listings_in_analysis > 1),
+    largest_host_group = max(listings_in_analysis)
+  )
+```
+
+
+
+```{r save-cleaned-data, include=FALSE}
+readr::write_csv(airbnb_clean, "airbnb_clean.csv")
 ```
