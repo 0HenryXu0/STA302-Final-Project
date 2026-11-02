@@ -138,7 +138,7 @@ stopifnot(
 
 
 
-```{r check-cleaning, include=FALSE}
+```{r check cleaning, include=FALSE}
 cleaning_summary
 missing_summary
 
@@ -159,6 +159,137 @@ airbnb_clean %>%
 
 
 
-```{r save-cleaned-data, include=FALSE}
+```{r save cleaned data, include=FALSE}
 readr::write_csv(airbnb_clean, "airbnb_clean.csv")
+```
+
+
+
+```{r fit preliminary model, include=FALSE}
+preliminary_model <- lm(
+  price ~ bedrooms +
+    beds +
+    review_rating +
+    guest_capacity +
+    host_listings +
+    number_of_reviews +
+    minimum_nights +
+    neighbourhood +
+    superhost * room_type,
+  data = airbnb_clean,
+  na.action = na.fail
+)
+```
+
+
+
+```{r preliminary model, include=FALSE}
+# Coefficients, standard errors, t-tests, and model fit.
+summary(preliminary_model)
+
+# 95% confidence intervals for regression coefficients.
+confint(preliminary_model)
+
+# Number of observations used.
+nobs(preliminary_model)
+
+# Store estimates and uncertainty for a formatted results table.
+coefficient_summary <- coef(summary(preliminary_model))
+coefficient_ci <- confint(preliminary_model)
+
+model_results <- data.frame(
+  term = rownames(coefficient_summary),
+  estimate = coefficient_summary[, "Estimate"],
+  standard_error = coefficient_summary[, "Std. Error"],
+  conf_low = coefficient_ci[rownames(coefficient_summary), 1],
+  conf_high = coefficient_ci[rownames(coefficient_summary), 2],
+  p_value = coefficient_summary[, "Pr(>|t|)"],
+  row.names = NULL
+)
+```
+
+
+
+```{r model results table, echo=FALSE, results='asis'}
+library(kableExtra)
+
+# Create a display table without changing model_results.
+results_table <- model_results %>%
+  filter(!grepl("^neighbourhood", term)) %>%
+  transmute(
+    Term = term,
+    Estimate = estimate,
+    SE = standard_error,
+    `95% CI` = sprintf("(%.2f, %.2f)", conf_low, conf_high),
+    `p-value` = format.pval(p_value, digits = 3, eps = 0.001)
+  )
+
+knitr::kable(
+  results_table,
+  format = "pipe",
+  digits = 2,
+  row.names = FALSE,
+  caption = paste(
+    "Preliminary regression of nightly price (CAD).",
+    "Neighbourhood coefficients are included in the model but not shown."
+  )
+) %>%
+  kable_styling(
+    latex_options = "repeat_header",
+    font_size = 8,
+    full_width = FALSE
+  ) %>%
+  column_spec(1, width = "5cm")
+```
+
+
+
+```{r main-diagnostics, echo=FALSE, fig.width=10, fig.height=3.5, out.width="100%", fig.align="center", fig.cap="Preliminary model diagnostics: residuals versus fitted values, normal Q-Q plot of residuals, and observed price versus fitted values."}
+# Extract values from the fitted model.
+e <- resid(preliminary_model)
+y_hat <- fitted(preliminary_model)
+y <- model.response(model.frame(preliminary_model))
+
+# Save graphics settings and create a 1-by-3 grid.
+old_par <- par(no.readonly = TRUE)
+par(
+  mfrow = c(1, 3),
+  mar = c(4, 4, 3, 1),
+  cex = 0.85
+)
+
+point_colour <- adjustcolor("black", alpha.f = 0.25)
+
+# 1. Residuals versus fitted values.
+plot(
+  y_hat, e,
+  main = "Residuals vs Fitted",
+  xlab = "Fitted price (CAD)",
+  ylab = "Residuals (CAD)",
+  pch = 16, cex = 0.4, col = point_colour
+)
+abline(h = 0, col = "red", lty = 2)
+
+# 2. Normal Q-Q plot of residuals.
+qqnorm(
+  e,
+  main = "Normal Q-Q Plot",
+  xlab = "Theoretical quantiles",
+  ylab = "Sample residual quantiles",
+  pch = 16, cex = 0.4, col = point_colour
+)
+qqline(e, col = "red", lty = 2)
+
+# 3. Observed response versus fitted values.
+plot(
+  y_hat, y,
+  main = "Price vs Fitted",
+  xlab = "Fitted price (CAD)",
+  ylab = "Observed price (CAD)",
+  pch = 16, cex = 0.4, col = point_colour
+)
+abline(a = 0, b = 1, col = "red", lty = 2)
+
+# Restore graphics settings.
+par(old_par)
 ```
