@@ -45,7 +45,7 @@ airbnb_selected <- airbnb_raw %>%
     listing_id = id,
     host_id = host_id,
 
-    # Response: advertised nightly price in CAD.
+    # Response: nightly price in CAD.
     price = parse_number(price),
 
     # Numerical predictors.
@@ -70,7 +70,7 @@ airbnb_selected <- airbnb_raw %>%
     neighbourhood = factor(neighbourhood_cleansed)
   )
 
-# Define model variables explicitly: IDs are not predictors.
+# Define model variables explicitly: IDs are not predictors!
 predictors <- c(
   "bedrooms",
   "beds",
@@ -124,7 +124,7 @@ cleaning_summary <- data.frame(
   )
 )
 
-# Verify the project sample-size requirement and numerical validity.
+# Verify the project sample-size requirement (YES)
 stopifnot(
   nrow(airbnb_clean) >= 1000,
   !anyNA(airbnb_clean[model_variables]),
@@ -138,11 +138,71 @@ stopifnot(
 
 
 
-```{r check cleaning, include=FALSE}
-cleaning_summary
-missing_summary
+```{r group by region and update model, include=FALSE}
+#Pre-determined csv with neignbourhoods grouped by geographical regions
+neighbourhood_lookup <- readr::read_csv(
+  "neighbourhood_region_mapping.csv",
+  show_col_types = FALSE
+)
 
-summary(airbnb_clean[model_variables])
+airbnb_clean <- airbnb_clean %>%
+  mutate(neighbourhood = as.character(neighbourhood)) %>%
+  left_join(neighbourhood_lookup, by = "neighbourhood") %>%
+  mutate(
+    region = factor(
+      region,
+      levels = c(
+        "Toronto-East York", "Etobicoke", "York",
+        "North York", "Scarborough"
+      )
+    )
+  )
+
+stopifnot(!anyNA(airbnb_clean$region))
+
+# Percentage of listings <=1, 3, 5: 47.19516, 72.31326, 80.49159 
+#sapply(c(1, 3, 5), function(k) mean(airbnb_clean$host_listings <= k, na.rm = TRUE) * 100) |> setNames(c("<=1 (%)", "<=3 (%)", "<=5 (%)"))
+
+airbnb_clean <- airbnb_clean %>%
+  mutate(
+    multi_listing = factor(
+      case_when(
+        host_listings == 1 ~ "No",
+        host_listings >= 2 ~ "Yes",
+        TRUE ~ NA_character_
+      ),
+      levels = c("No", "Yes")
+    )
+  )
+
+```
+
+
+
+```{r neighbourhood-groups, echo=FALSE}
+# For personal checks
+neighbourhood_lookup %>%
+  arrange(region, neighbourhood) %>%
+  group_by(region) %>%
+  summarise(
+    Count = n_distinct(neighbourhood),
+    Neighbourhoods = paste(unique(neighbourhood), collapse = "; "),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(
+    col.names = c("Region", "Count", "Neighbourhoods"),
+    row.names = FALSE,
+    caption = "Neighbourhoods included in each geographic region."
+  )
+```
+
+
+
+```{r check cleaning, include=FALSE}
+# cleaning_summary
+# missing_summary
+
+summary(airbnb_clean)
 
 table(airbnb_clean$room_type)
 table(airbnb_clean$superhost)
@@ -155,6 +215,14 @@ airbnb_clean %>%
     hosts_with_multiple_listings = sum(listings_in_analysis > 1),
     largest_host_group = max(listings_in_analysis)
   )
+#  unique_hosts hosts_with_multiple_listings largest_host_group
+#          <int>                        <int>              <int>
+# 1         9604                         1678                 80
+with(airbnb_clean, table(multi_listing, superhost))
+#               superhost
+# multi_listing   No  Yes
+#           No  3587 2807
+#           Yes 3593 3561
 ```
 
 
@@ -167,15 +235,9 @@ readr::write_csv(airbnb_clean, "airbnb_clean.csv")
 
 ```{r fit preliminary model, include=FALSE}
 preliminary_model <- lm(
-  price ~ bedrooms +
-    beds +
-    review_rating +
-    guest_capacity +
-    host_listings +
-    number_of_reviews +
-    minimum_nights +
-    neighbourhood +
-    superhost * room_type,
+  price ~ bedrooms + beds + review_rating +
+    guest_capacity + number_of_reviews + minimum_nights +
+    region + room_type + multi_listing * superhost,
   data = airbnb_clean,
   na.action = na.fail
 )
@@ -230,8 +292,7 @@ knitr::kable(
   digits = 2,
   row.names = FALSE,
   caption = paste(
-    "Preliminary regression of nightly price (CAD).",
-    "Neighbourhood coefficients are included in the model but not shown."
+    "Preliminary regression of nightly price (CAD)."
   )
 ) %>%
   kable_styling(
@@ -240,6 +301,9 @@ knitr::kable(
     full_width = FALSE
   ) %>%
   column_spec(1, width = "5cm")
+
+#number of categories in neighbourhood
+nlevels(airbnb_clean$neighbourhood)
 ```
 
 
